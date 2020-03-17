@@ -14,40 +14,13 @@
  * limitations under the License.
  */
 
-import createManifestFetcher, {
-  IManifestFetcherParsedResult,
-  IManifestFetcherWarningEvent,
-} from "./manifest";
 import createPeriodFetcher, {
   IPeriodFetcherParsedResult,
   IPeriodFetcherWarningEvent,
-} from "./period";
-import SegmentFetcherCreator, {
-  IPrioritizedSegmentFetcher,
-  ISegmentFetcherChunkCompleteEvent,
-  ISegmentFetcherChunkEvent,
-  ISegmentFetcherCreatorBackoffOptions,
-  ISegmentFetcherEvent,
-  ISegmentFetcherWarning,
-} from "./segment";
+} from "./create_period_fetcher";
 
+export default createPeriodFetcher;
 export {
-  createManifestFetcher,
-  createPeriodFetcher,
-  SegmentFetcherCreator,
-
-  IManifestFetcherParsedResult,
-  IManifestFetcherWarningEvent,
-
   IPeriodFetcherParsedResult,
   IPeriodFetcherWarningEvent,
-
-  IPrioritizedSegmentFetcher,
-  ISegmentFetcherEvent,
-
-  ISegmentFetcherCreatorBackoffOptions,
-
-  ISegmentFetcherChunkEvent,
-  ISegmentFetcherChunkCompleteEvent,
-  ISegmentFetcherWarning,
 };

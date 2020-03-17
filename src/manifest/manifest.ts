@@ -26,8 +26,10 @@ import Adaptation, {
   IAdaptationType,
   IRepresentationFilter,
 } from "./adaptation";
-import Period, {
+import {
   IManifestAdaptations,
+  LoadedPeriod,
+  PartialPeriod,
 } from "./period";
 import Representation from "./representation";
 import { StaticRepresentationIndex } from "./representation_index";
@@ -88,7 +90,7 @@ interface IManifestParsingOptions {
 
 /** Representation affected by a `decipherabilityUpdate` event. */
 export interface IDecipherabilityUpdateElement { manifest : Manifest;
-                                                 period : Period;
+                                                 period : LoadedPeriod;
                                                  adaptation : Adaptation;
                                                  representation : Representation; }
 
@@ -98,6 +100,9 @@ export interface IManifestEvents {
   manifestUpdate : null;
   /** Some Representation's decipherability status has been updated */
   decipherabilityUpdate : IDecipherabilityUpdateElement[];
+
+  /** A PartialPeriod is now loaded */
+  loadedPeriod : [PartialPeriod, Array<LoadedPeriod | PartialPeriod>];
 }
 
 /**
@@ -131,7 +136,7 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
    * A Period contains information about the content available for a specific
    * period of time.
    */
-  public readonly periods : Period[];
+  public readonly periods : Array<LoadedPeriod | PartialPeriod>;
 
   /** When that promise resolves, the whole Manifest needs to be updated */
   public expired : Promise<void> | null;
@@ -236,8 +241,13 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
     this.clockOffset = parsedManifest.clockOffset;
 
     this.periods = parsedManifest.periods.map((parsedPeriod) => {
-      const period = new Period(parsedPeriod, representationFilter);
-      this.parsingErrors.push(...period.parsingErrors);
+      let period : LoadedPeriod | PartialPeriod;
+      if (parsedPeriod.isLoaded) {
+        period = new LoadedPeriod(parsedPeriod, representationFilter);
+        this.parsingErrors.push(...period.parsingErrors);
+      } else {
+        period = new PartialPeriod(parsedPeriod);
+      }
       return period;
     }).sort((a, b) => a.start - b.start);
 
@@ -246,8 +256,10 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
      * v3.x.x manages adaptations at the Manifest level
      */
     /* tslint:disable:deprecation */
-    this.adaptations = this.periods[0] === undefined ? {} :
-                                                       this.periods[0].adaptations;
+    this.adaptations = this.periods[0] === undefined ||
+                       !this.periods[0].isLoaded ?
+                         {} :
+                         this.periods[0].adaptations;
     /* tslint:enable:deprecation */
 
     this.minimumTime = parsedManifest.minimumTime;
@@ -275,7 +287,7 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
    * @param {string} id
    * @returns {Object|undefined}
    */
-  public getPeriod(id : string) : Period | undefined {
+  public getPeriod(id : string) : LoadedPeriod | PartialPeriod | undefined {
     return arrayFind(this.periods, (period) => {
       return id === period.id;
     });
@@ -287,7 +299,7 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
    * @param {number} time
    * @returns {Object|undefined}
    */
-  public getPeriodForTime(time : number) : Period | undefined {
+  public getPeriodForTime(time : number) : LoadedPeriod | PartialPeriod | undefined {
     return arrayFind(this.periods, (period) => {
       return time >= period.start &&
              (period.end === undefined || period.end > time);
@@ -301,8 +313,8 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
    * @returns {Object|null}
    */
   public getPeriodAfter(
-    period : Period
-  ) : Period | null {
+    period : LoadedPeriod | PartialPeriod
+  ) : LoadedPeriod | PartialPeriod | null {
     const endOfPeriod = period.end;
     if (endOfPeriod === undefined) {
       return null;
@@ -460,7 +472,7 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
     warnOnce("manifest.getAdaptations() is deprecated." +
              " Please use manifest.period[].getAdaptations() instead");
     const firstPeriod = this.periods[0];
-    if (firstPeriod === undefined) {
+    if (firstPeriod === undefined || !firstPeriod.isLoaded) {
       return [];
     }
     const adaptationsByType = firstPeriod.adaptations;
@@ -483,7 +495,7 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
     warnOnce("manifest.getAdaptationsForType(type) is deprecated." +
              " Please use manifest.period[].getAdaptationsForType(type) instead");
     const firstPeriod = this.periods[0];
-    if (firstPeriod === undefined) {
+    if (firstPeriod === undefined || !firstPeriod.isLoaded) {
       return [];
     }
     const adaptationsForType = firstPeriod.adaptations[adaptationType];
@@ -501,6 +513,24 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
     /* tslint:disable:deprecation */
     return arrayFind(this.getAdaptations(), ({ id }) => wantedId === id);
     /* tslint:enable:deprecation */
+  }
+
+  public setLoadedPeriod(
+    basePeriodID : string,
+    periods : Array< LoadedPeriod | PartialPeriod >
+  ) : void {
+    for (let i = 0; i < this.periods.length; i++) {
+      if (this.periods[i].id === basePeriodID) {
+        const oldPeriod = this.periods.splice(i, 1, ...periods);
+        if (!oldPeriod[0].isLoaded) {
+          this.trigger("loadedPeriod", [oldPeriod[0], periods]);
+        }
+        return;
+      }
+    }
+
+    // XXX TODO
+    // Not found
   }
 
   /**
@@ -532,7 +562,10 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
       return newAdaptation;
     });
 
-    if (newImageTracks.length > 0 && this.periods.length > 0) {
+    if (newImageTracks.length > 0
+        && this.periods.length > 0
+        && this.periods[0].isLoaded)
+    {
       const { adaptations } = this.periods[0];
       adaptations.image =
         adaptations.image != null ? adaptations.image.concat(newImageTracks) :
@@ -587,7 +620,10 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
       }));
     }, []);
 
-    if (newTextAdaptations.length > 0 && this.periods.length > 0) {
+    if (newTextAdaptations.length > 0
+        && this.periods.length > 0
+        && this.periods[0].isLoaded)
+    {
       const { adaptations } = this.periods[0];
       adaptations.text =
         adaptations.text != null ? adaptations.text.concat(newTextAdaptations) :
@@ -614,18 +650,16 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
     }
     this.parsingErrors = newManifest.parsingErrors;
     this.suggestedPresentationDelay = newManifest.suggestedPresentationDelay;
-    this.transport = newManifest.transport;
     this.uris = newManifest.uris;
 
-    if (updateType === MANIFEST_UPDATE_TYPE.Full) {
-      replacePeriods(this.periods, newManifest.periods);
-    } else {
+    const updates = updateType === MANIFEST_UPDATE_TYPE.Full ?
+      replacePeriods(this.periods, newManifest.periods) :
       updatePeriods(this.periods, newManifest.periods);
-    }
 
     // Re-set this.adaptations for retro-compatibility in v3.x.x
     /* tslint:disable:deprecation */
-    this.adaptations = this.periods[0] === undefined ?
+    this.adaptations = this.periods[0] === undefined ||
+                       !this.periods[0].isLoaded ?
                          {} :
                          this.periods[0].adaptations;
     /* tslint:enable:deprecation */
@@ -640,13 +674,17 @@ export default class Manifest extends EventEmitter<IManifestEvents> {
         if (period.end === undefined || period.end > min) {
           break;
         }
-        this.periods.splice(0);
+        const removedPeriod = this.periods.splice(0);
+        updates.removed.push(...removedPeriod);
       }
     }
 
     // Let's trigger events at the end, as those can trigger side-effects.
     // We do not want the current Manifest object to be incomplete when those
     // happen.
+    for (let i = 0; i < updates.loaded.length; i++) {
+      this.trigger("loadedPeriod", updates.loaded[i]);
+    }
     this.trigger("manifestUpdate", null);
   }
 }
@@ -667,15 +705,17 @@ function updateDeciperability(
   const updates : IDecipherabilityUpdateElement[] = [];
   for (let i = 0; i < manifest.periods.length; i++) {
     const period = manifest.periods[i];
-    const adaptations = period.getAdaptations();
-    for (let j = 0; j < adaptations.length; j++) {
-      const adaptation = adaptations[j];
-      const representations = adaptation.representations;
-      for (let k = 0; k < representations.length; k++) {
-        const representation = representations[k];
-        if (!predicate(representation)) {
-          updates.push({ manifest, period, adaptation, representation });
-          representation.decipherable = false;
+    if (period.isLoaded) {
+      const adaptations = period.getAdaptations();
+      for (let j = 0; j < adaptations.length; j++) {
+        const adaptation = adaptations[j];
+        const representations = adaptation.representations;
+        for (let k = 0; k < representations.length; k++) {
+          const representation = representations[k];
+          if (!predicate(representation)) {
+            updates.push({ manifest, period, adaptation, representation });
+            representation.decipherable = false;
+          }
         }
       }
     }

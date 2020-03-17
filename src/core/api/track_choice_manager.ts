@@ -26,7 +26,8 @@ import {
 import log from "../../log";
 import {
   Adaptation,
-  Period,
+  LoadedPeriod,
+  PartialPeriod,
   Representation,
 } from "../../manifest";
 import arrayFind from "../../utils/array_find";
@@ -101,7 +102,7 @@ interface ITMPeriodVideoInfos { adaptations : Adaptation[];
                                 adaptation$ : Subject<Adaptation|null>; }
 
 /** Every information stored for a single Period. */
-interface ITMPeriodInfos { period : Period;
+interface ITMPeriodInfos { period : LoadedPeriod;
                            audio? : ITMPeriodAudioInfos;
                            text? : ITMPeriodTextInfos;
                            video? : ITMPeriodVideoInfos; }
@@ -175,13 +176,13 @@ export default class TrackChoiceManager {
   private _preferredTextTracks : BehaviorSubject<ITextTrackPreference[]>;
 
   /** Memoization of the previously-chosen audio Adaptation for each Period. */
-  private _audioChoiceMemory : WeakMap<Period, Adaptation|null>;
+  private _audioChoiceMemory : WeakMap<LoadedPeriod, Adaptation|null>;
 
   /** Memoization of the previously-chosen text Adaptation for each Period. */
-  private _textChoiceMemory : WeakMap<Period, Adaptation|null>;
+  private _textChoiceMemory : WeakMap<LoadedPeriod, Adaptation|null>;
 
   /** Memoization of the previously-chosen video Adaptation for each Period. */
-  private _videoChoiceMemory : WeakMap<Period, Adaptation|null>;
+  private _videoChoiceMemory : WeakMap<LoadedPeriod, Adaptation|null>;
 
   /**
    * @param {BehaviorSubject<Array.<Object|null>>} preferredAudioTracks - Array
@@ -207,13 +208,13 @@ export default class TrackChoiceManager {
   /**
    * Add Subject to choose Adaptation for new "audio" or "text" Period.
    * @param {string} bufferType - The concerned buffer type
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    * @param {Subject.<Object|null>} adaptation$ - A subject through which the
    * choice will be given
    */
   public addPeriod(
     bufferType : "audio" | "text"| "video",
-    period : Period,
+    period : LoadedPeriod,
     adaptation$ : Subject<Adaptation|null>
   ) : void {
     const periodItem = getPeriodItem(this._periods, period);
@@ -238,11 +239,11 @@ export default class TrackChoiceManager {
    * Remove Subject to choose an "audio", "video" or "text" Adaptation for a
    * Period.
    * @param {string} bufferType - The concerned buffer type
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    */
   public removePeriod(
     bufferType : "audio" | "text" | "video",
-    period : Period
+    period : LoadedPeriod | PartialPeriod
   ) : void {
     const periodIndex = findPeriodIndex(this._periods, period);
     if (periodIndex == null) {
@@ -285,9 +286,9 @@ export default class TrackChoiceManager {
    * Emit initial audio Adaptation through the given Subject based on:
    *   - the preferred audio tracks
    *   - the last choice for this period, if one
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    */
-  public setInitialAudioTrack(period : Period) : void {
+  public setInitialAudioTrack(period : LoadedPeriod) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const audioInfos = periodItem != null ? periodItem.audio :
                                             null;
@@ -323,9 +324,9 @@ export default class TrackChoiceManager {
    * Emit initial text Adaptation through the given Subject based on:
    *   - the preferred text tracks
    *   - the last choice for this period, if one
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    */
-  public setInitialTextTrack(period : Period) : void {
+  public setInitialTextTrack(period : LoadedPeriod) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const textInfos = periodItem != null ? periodItem.text :
                                            null;
@@ -359,9 +360,9 @@ export default class TrackChoiceManager {
    * Emit initial video Adaptation through the given Subject based on:
    *   - the preferred video tracks
    *   - the last choice for this period, if one
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    */
-  public setInitialVideoTrack(period : Period) : void {
+  public setInitialVideoTrack(period : LoadedPeriod) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const videoInfos = periodItem != null ? periodItem.video :
                                             null;
@@ -390,10 +391,10 @@ export default class TrackChoiceManager {
 
   /**
    * Set audio track based on the ID of its adaptation for a given added Period.
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    * @param {string} wantedId - adaptation id of the wanted track
    */
-  public setAudioTrackByID(period : Period, wantedId : string) : void {
+  public setAudioTrackByID(period : LoadedPeriod, wantedId : string) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const audioInfos = periodItem != null ? periodItem.audio :
                                             null;
@@ -418,10 +419,10 @@ export default class TrackChoiceManager {
 
   /**
    * Set text track based on the ID of its adaptation for a given added Period.
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    * @param {string} wantedId - adaptation id of the wanted track
    */
-  public setTextTrackByID(period : Period, wantedId : string) : void {
+  public setTextTrackByID(period : LoadedPeriod, wantedId : string) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const textInfos = periodItem != null ? periodItem.text :
                                            null;
@@ -445,14 +446,14 @@ export default class TrackChoiceManager {
 
   /**
    * Set video track based on the ID of its adaptation for a given added Period.
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    * @param {string} wantedId - adaptation id of the wanted track
    *
    * @throws Error - Throws if the period given has not been added
    * @throws Error - Throws if the given id is not found in any video adaptation
    * of the given Period.
    */
-  public setVideoTrackByID(period : Period, wantedId : string) : void {
+  public setVideoTrackByID(period : LoadedPeriod, wantedId : string) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const videoInfos = periodItem != null ? periodItem.video :
                                             null;
@@ -478,11 +479,11 @@ export default class TrackChoiceManager {
   /**
    * Disable the current text track for a given period.
    *
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    *
    * @throws Error - Throws if the period given has not been added
    */
-  public disableTextTrack(period : Period) : void {
+  public disableTextTrack(period : LoadedPeriod) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const textInfos = periodItem != null ? periodItem.text :
                                            null;
@@ -503,7 +504,7 @@ export default class TrackChoiceManager {
    * @param {Object} period
    * @throws Error - Throws if the period given has not been added
    */
-  public disableVideoTrack(period : Period) : void {
+  public disableVideoTrack(period : LoadedPeriod) : void {
     const periodItem = getPeriodItem(this._periods, period);
     const videoInfos = periodItem?.video;
     if (videoInfos === undefined) {
@@ -524,10 +525,10 @@ export default class TrackChoiceManager {
    * Returns null is the the current audio track is disabled or not
    * set yet.
    *
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    * @returns {Object|null} - The audio track chosen for this Period
    */
-  public getChosenAudioTrack(period : Period) : ITMAudioTrack|null {
+  public getChosenAudioTrack(period : LoadedPeriod) : ITMAudioTrack|null {
     const periodItem = getPeriodItem(this._periods, period);
     const audioInfos = periodItem != null ? periodItem.audio :
                                             null;
@@ -559,10 +560,10 @@ export default class TrackChoiceManager {
    * Returns null is the the current text track is disabled or not
    * set yet.
    *
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    * @returns {Object|null} - The text track chosen for this Period
    */
-  public getChosenTextTrack(period : Period) : ITMTextTrack|null {
+  public getChosenTextTrack(period : LoadedPeriod) : ITMTextTrack|null {
     const periodItem = getPeriodItem(this._periods, period);
     const textInfos = periodItem != null ? periodItem.text :
                                            null;
@@ -590,10 +591,10 @@ export default class TrackChoiceManager {
    * Returns null is the the current video track is disabled or not
    * set yet.
    *
-   * @param {Period} period - The concerned Period.
+   * @param {Object} period - The concerned Period.
    * @returns {Object|null} - The video track chosen for this Period
    */
-  public getChosenVideoTrack(period : Period) : ITMVideoTrack|null {
+  public getChosenVideoTrack(period : LoadedPeriod) : ITMVideoTrack|null {
     const periodItem = getPeriodItem(this._periods, period);
     const videoInfos = periodItem != null ? periodItem.video :
                                             null;
@@ -620,7 +621,7 @@ export default class TrackChoiceManager {
    *
    * @returns {Array.<Object>}
    */
-  public getAvailableAudioTracks(period : Period) : ITMAudioTrackListItem[] {
+  public getAvailableAudioTracks(period : LoadedPeriod) : ITMAudioTrackListItem[] {
     const periodItem = getPeriodItem(this._periods, period);
     const audioInfos = periodItem != null ? periodItem.audio :
                                            null;
@@ -652,10 +653,10 @@ export default class TrackChoiceManager {
    * Returns all available text tracks for a given Period, as an array of
    * objects.
    *
-   * @param {Period} period
+   * @param {Object} period
    * @returns {Array.<Object>}
    */
-  public getAvailableTextTracks(period : Period) : ITMTextTrackListItem[] {
+  public getAvailableTextTracks(period : LoadedPeriod) : ITMTextTrackListItem[] {
     const periodItem = getPeriodItem(this._periods, period);
     const textInfos = periodItem != null ? periodItem.text :
                                            null;
@@ -684,7 +685,7 @@ export default class TrackChoiceManager {
    *
    * @returns {Array.<Object>}
    */
-  public getAvailableVideoTracks(period : Period) : ITMVideoTrackListItem[] {
+  public getAvailableVideoTracks(period : LoadedPeriod) : ITMVideoTrackListItem[] {
     const periodItem = getPeriodItem(this._periods, period);
     const videoInfos = periodItem != null ? periodItem.video :
                                             null;
@@ -965,8 +966,8 @@ function findFirstOptimalTextAdaptation(
  */
 function findPeriodIndex(
   periods : SortedList<ITMPeriodInfos>,
-  period : Period
-) : number|undefined {
+  period : LoadedPeriod | PartialPeriod
+) : number | undefined {
   for (let i = 0; i < periods.length(); i++) {
     const periodI = periods.get(i);
     if (periodI.period.id === period.id) {
@@ -985,8 +986,8 @@ function findPeriodIndex(
  */
 function getPeriodItem(
   periods : SortedList<ITMPeriodInfos>,
-  period : Period
-) : ITMPeriodInfos|undefined {
+  period : LoadedPeriod
+) : ITMPeriodInfos | undefined {
   for (let i = 0; i < periods.length(); i++) {
     const periodI = periods.get(i);
     if (periodI.period.id === period.id) {

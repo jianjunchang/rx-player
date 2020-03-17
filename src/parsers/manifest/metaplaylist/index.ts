@@ -18,6 +18,7 @@ import parseMetaPlaylist, {
   IMetaPlaylist,
   IMetaPlaylistTextTrack,
   IParserResponse,
+  transformManifestToMetaplaylistPeriod,
 } from "./metaplaylist_parser";
 
 export default parseMetaPlaylist;
@@ -25,4 +26,5 @@ export {
   IMetaPlaylist,
   IMetaPlaylistTextTrack,
   IParserResponse,
+  transformManifestToMetaplaylistPeriod,
 };
